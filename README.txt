@@ -1,6 +1,8 @@
+Teen Denton Police
+==================
 Fork to only log inmates that are teenagers (under 20 years of age)
 
-Available at: twitter.com/TeenArrests
+Available at: https://twitter.com/TeenArrests
 
 Scrapes mug shot and inmate information from the City Jail Custody
 Report page for Denton, TX and posts some of the information to Twitter
