@@ -74,8 +74,6 @@ class Inmate(object):
     def get_twitter_message(self):
         """Constructs a mug shot caption """
         parts = []
-        # Append arrest time
-        parts.append(self.arrest)
         # Append age
         t1 = datetime.datetime.strptime(self.DOB, '%m/%d/%Y')
         t2 = datetime.datetime.strptime(self.arrest, '%m/%d/%Y %H:%M:%S')
@@ -93,9 +91,9 @@ class Inmate(object):
                 parts.append("Bond: " + bond)
         # Append list of charges
         # But first shorten the charge text
-        cities = (r'(?:DPD|DENTON|LAKE DALLAS|FRISCO|'
-                  r'DALLAS|CORINTH|RICHARDSON)*')
-        extras = r'\s*(?:CO)?\s*(?:SO)?\s*(?:PD)?\s*(?:WARRANT)?(?:S)?\s*/\s*'
+        cities = (r'(?:DPD|Denton|Lake Dallas|Frisco|'
+                  r'Dallas|Corinth|Richardson)*')
+        extras = r'\s*(?:CO)?\s*(?:SO)?\s*(?:PD)?\s*(?:Warrant)?(?:S)?\s*/\s*'
         for charge in self.charges:
             charge['charge'] = re.sub(r'\A' + cities + extras,
                                       '',
@@ -104,7 +102,7 @@ class Inmate(object):
             charge['charge'] = re.sub(r'([<>])', r' \1 ', charge['charge'])
             # collapse multiple spaces
             charge['charge'] = re.sub(r'\s{2,}', r' ', charge['charge'])
-            parts.append(charge['charge'])
+            parts.append(charge['charge'].lower())
         return ' | '.join(parts)
 
     def __str__(self):
