@@ -4,14 +4,16 @@
 # Attribution-NonCommercial-ShareAlike 3.0 Unported License.
 # To view a copy of this license, visit:
 # http://creativecommons.org/licenses/by-nc-sa/3.0/
-"""Scrapes mug shot and inmate information from the City Jail Custody
+"""Fork to only log inmates that are teenagers (under 20 years of age)
+
+Scrapes mug shot and inmate information from the City Jail Custody
 Report page for Denton, TX and posts some of the information to Twitter
 via TwitPic.
 
 The City Jail Custody Report page that we are scraping is available here:
 http://dpdjailview.cityofdenton.com/
 
-Configuration is first required in order to post to TwitPic or Twitter.
+Configuration is first required in order to post to TwitPic or Twitter. Without configuration the program will still scrape mug shots and log the images and inmate information to disk.
 
 If run as __main__, will loop and continuously check the report page.
 To run only once, execute this module's main() function.
@@ -27,22 +29,12 @@ import pprint
 import re
 import sys
 import time
-import http.client
-import urllib
-import urllib.error
-import urllib.request
+import urllib2
 
-try:
-    from twython3k import Twython
-except ImportError:
-    print('Unable to load Twitter library. Disabling Twitter features.',
-          file=sys.stderr)
-    Twython = None
 try:
     from gmail_dentonpolice import mail
 except ImportError:
-    print('Unable to load gmail library. Disabling submitting to TwitPic.',
-          file=sys.stderr)
+    print('Unable to load gmail library. Disabling submitting to TwitPic.')
     mail = None
 
 
@@ -50,26 +42,7 @@ except ImportError:
 
 # TwitPic image upload email address.
 # Used to post mug shot and accompanying caption to TwitPic.
-TWITPIC_EMAIL_ADDRESS = ''
-
-# Twitter account info.
-# Used to post most number of inmates in jail at once information.
-TWITTER_TOKEN = ''
-TWITTER_SECRET = ''
-OAUTH_TOKEN = ''
-OAUTH_TOKEN_SECRET = ''
-
-# Proxy setup
-# The default port for Polipo used in the Tor Vidalia Bundle is 8118.
-#   If Polipo isn't running, you might need to start it manually after Tor,
-#   and if so be sure to use whatever port it is listening on (such as 8123).
-PROXY_PORT = 8118
-# Use a proxy; in this case set to use Polipo (through Tor)
-proxy_support = urllib.request.ProxyHandler({'http':
-                                             '127.0.0.1:'
-                                             '{}'.format(PROXY_PORT)})
-opener = urllib.request.build_opener(proxy_support)
-opener.addheaders = [('User-agent', 'Mozilla/5.0')]
+TWITPIC_EMAIL_ADDRESS = ''       
 
 # How often to check the City Jail Custody Report webpage
 SECONDS_BETWEEN_CHECKS = 60
@@ -93,7 +66,11 @@ class Inmate(object):
                 setattr(self, key, dictionary[key])
         for key in kwargs:
             setattr(self, key, kwargs[key])
-
+    def get_age(self):
+        t1 = datetime.datetime.strptime(self.DOB, '%m/%d/%Y')
+        t2 = datetime.datetime.strptime(self.arrest, '%m/%d/%Y %H:%M:%S')
+        age = int((t2 - t1).days / 365.2425)
+        return age
     def get_twitter_message(self):
         """Constructs a mug shot caption """
         parts = []
@@ -148,10 +125,10 @@ def get_jail_report():
 ##    with open('dentonpolice_recent.html') as f:
 ##        return f.read()
     logger.debug("Opening URL")
-    response = opener.open('http://dpdjailview.cityofdenton.com/')
+    response = urllib2.urlopen('http://dpdjailview.cityofdenton.com/')
     logger.debug("Reading page")
     html = response.read().decode('utf-8')
-    with open('dentonpolice_recent.html', mode='w', encoding='utf-8') as f:
+    with open('dentonpolice_recent.html', mode='w') as f:
         f.write(html)
     return html
 
@@ -163,8 +140,7 @@ def get_mug_shots(inmates):
     for inmate in inmates:
         try:
             logger.debug("Opening mug shot URL (ID: {})".format(inmate.id))
-            response = opener.open("http://dpdjailview.cityofdenton.com/"
-                                   "ImageHandler.ashx?type=image&imageID=" + inmate.id)
+            response = urllib2.urlopen("http://dpdjailview.cityofdenton.com/ImageHandler.ashx?type=image&imageID=" + inmate.id)
             inmate.mug = response.read()
         except urllib.error.HTTPError as e:
             if e.code == 500:
@@ -247,7 +223,7 @@ def log_inmates(inmates, recent=False, mode='a'):
         location = 'dentonpolice_log.txt'
     logger.debug("Saving inmates to {} log".format("recent" if recent
                                                    else "standard"))
-    with open(location, mode=mode, encoding='utf-8') as f:
+    with open(location, mode=mode) as f:
         for inmate in inmates:
             if not recent:
                 logger.info("Recording Inmate:\n%s", inmate)
@@ -274,7 +250,7 @@ def read_log(recent=False):
                                                       "standard"))
     inmates = []
     try:
-        with open(location, encoding='utf-8') as f:
+        with open(location) as f:
             for line in f:
                 inmates.append(Inmate(ast.literal_eval(line)))
     except IOError as e:
@@ -299,7 +275,6 @@ def most_recent_mug(inmate):
                 best = filename
     return best
 
-
 def post_twitpic(inmates):
     """Posts to TwitPic each inmate using their mug shot and caption.
 
@@ -308,45 +283,13 @@ def post_twitpic(inmates):
     """
     logger = logging.getLogger('post_twitpic')
     for inmate in inmates:
-        message = inmate.get_twitter_message()
-        logger.info('Posting to TwitPic (ID: %s)', inmate.id)
-        mail(to=TWITPIC_EMAIL_ADDRESS,
-             subject=message,  # Caption
-             text=repr(inmate),  # Serves as a log that can later be loaded in.
-             attach="mugs/{}".format(most_recent_mug(inmate)))
-
-
-def get_most_inmates_count():
-    """Returns the filename of the most recent mug shot for the Inmate.
-
-    Returns:
-        A tuple with the last most_count and the on_date when that occurred.
-    """
-    logger = logging.getLogger('get_most_inmates_count')
-    most_count, on_date = (None, None)
-    try:
-        with open('dentonpolice_most.txt', mode='r') as f:
-            (most_count, on_date) = f.read().split('\n')
-            most_count = int(most_count)
-    except IOError as e:
-        # No such file
-        if e.errno == errno.ENOENT:
-            logger.warning('No file with statistics found.')
-        else:
-            raise
-    except ValueError:
-        logger.warning('Could not parse data from file.')
-    return (most_count, on_date)
-
-
-def log_most_inmates_count(count):
-    """Logs to file the most-count and the current date."""
-    logger = logging.getLogger('log_most_inmates_count')
-    now = now = datetime.datetime.now().strftime('%m/%d/%y %H:%M:%S')
-    logger.info('Logging most inmates count at %s on %s', count, now)
-    with open('dentonpolice_most.txt', mode='w') as f:
-        f.write('{}\n{}'.format(count, now))
-
+        if inmate.get_age() < 20:
+            message = inmate.get_twitter_message()
+            logger.info('Posting to TwitPic (ID: %s)', inmate.id)
+            mail(to=TWITPIC_EMAIL_ADDRESS,
+                 subject=message,  # Caption
+                 text=repr(inmate),  # Serves as a log that can later be loaded in.
+                 attach="mugs/{}".format(most_recent_mug(inmate)))
 
 def parse_inmates(html):
     inmate_pattern = re.compile(r"""
@@ -433,28 +376,6 @@ def find_missing(inmates, recent_inmates):
     return missing
 
 
-def tweet_most_count(count, most_count, on_date):
-    """Tweet that we have seen the most number of inmates in jail at once."""
-    logger = logging.getLogger('tweet_most_count')
-    logger.info('Posting new record of %s inmates', count)
-    # Post to twitter and log
-    jail_url = Twython.shortenURL('http://dpdjailview.cityofdenton.com/')
-    now = datetime.datetime.now().strftime('%m/%d/%y %H:%M:%S')
-    message = ('New Record: {} inmates listed in jail '
-               'as of {}.').format(count, now)
-    if most_count and on_date:
-        message += ' Last record was {} inmates on {}'.format(most_count,
-                                                              on_date)
-    if len(message) + len(jail_url) + 1 <= 140:
-        message += ' ' + jail_url.decode('utf-8')
-    twitter = Twython(twitter_token=TWITTER_TOKEN,
-                      twitter_secret=TWITTER_SECRET,
-                      oauth_token=OAUTH_TOKEN,
-                      oauth_token_secret=OAUTH_TOKEN_SECRET)
-    twitter.updateStatus(status=message)
-    log_most_inmates_count(count)
-
-
 def main():
     """Main function
 
@@ -463,19 +384,7 @@ def main():
     """
     logger = logging.getLogger('main')
     # Get the Jail Report webpage
-    try:
-        html = get_jail_report()
-    except urllib.error.HTTPError as e:
-        # Service Unavailable
-        if e.code == 503:
-            reason = "HTTP Error 503: Service Unavailable"
-        else:
-            reason = e
-        logger.error("JailReport: %s", reason)
-        return
-    except http.client.HTTPException as e:
-        logger.error("JailReport: %s", e)
-        return
+    html = get_jail_report()
     # Parse list of inmates from webpage
     inmates = parse_inmates(html)
     # Load the list of inmates seen last time we got the page
@@ -535,15 +444,6 @@ def main():
             post_twitpic(inmates)
     # Save the most recent list of inmates to the log for next time
     log_inmates(inmates_original, recent=True)
-    # Check if there is a new record number of inmates seen on the jail report.
-    (most_count, on_date) = get_most_inmates_count()
-    count = len(inmates_original)
-    if not most_count or count > most_count:
-        if (Twython is not None and
-                TWITTER_TOKEN and TWITTER_SECRET and
-                OAUTH_TOKEN and OAUTH_TOKEN_SECRET):
-            tweet_most_count(count, most_count, on_date)
-
 
 if __name__ == '__main__':
     # Continuously checks the custody report page every SECONDS_BETWEEN_CHECKS.
