@@ -14,5 +14,13 @@ http://dpdjailview.cityofdenton.com/
 
 Configuration is first required in order to post to TwitPic or Twitter. Without configuration the program will still scrape mug shots and log the images and inmate information to disk.
 
-If run as __main__, will loop and continuously check the report page.
-To run only once, execute this module's main() function.
+How to Run
+==========
+
+1. Enter your Twitpic send email address (usually in the format <username>.<4_digit_code>@twitpic.com) in `scanner.py`
+
+2. Enter a gmail username and password to send the email to Twitpic, in the `sender.py` file
+
+3. Execute the command `python scanner.py` to start the process. It will automatically run every minute.
+
+I would recommend running the above command after running `screen` if you are on a server.

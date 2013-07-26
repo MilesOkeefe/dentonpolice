@@ -4,20 +4,6 @@
 # Attribution-NonCommercial-ShareAlike 3.0 Unported License.
 # To view a copy of this license, visit:
 # http://creativecommons.org/licenses/by-nc-sa/3.0/
-"""Fork to only log inmates that are teenagers (under 20 years of age)
-
-Scrapes mug shot and inmate information from the City Jail Custody
-Report page for Denton, TX and posts some of the information to Twitter
-via TwitPic.
-
-The City Jail Custody Report page that we are scraping is available here:
-http://dpdjailview.cityofdenton.com/
-
-Configuration is first required in order to post to TwitPic or Twitter. Without configuration the program will still scrape mug shots and log the images and inmate information to disk.
-
-If run as __main__, will loop and continuously check the report page.
-To run only once, execute this module's main() function.
-"""
 import ast
 import datetime
 import errno
@@ -32,17 +18,14 @@ import time
 import urllib2
 
 try:
-    from gmail_dentonpolice import mail
+    from uploader import mail
 except ImportError:
     print('Unable to load gmail library. Disabling submitting to TwitPic.')
     mail = None
 
 
-# Module settings
-
-# TwitPic image upload email address.
-# Used to post mug shot and accompanying caption to TwitPic.
-TWITPIC_EMAIL_ADDRESS = ''       
+TWITPIC_EMAIL_ADDRESS = '' 
+SAVE_LOCATION = '/var/scripts/teen_arrests/generated/' #replace this with whatever directory you want to store the generated data in
 
 # How often to check the City Jail Custody Report webpage
 SECONDS_BETWEEN_CHECKS = 60
@@ -88,16 +71,16 @@ class Inmate(object):
             if bond:
                 locale.setlocale(locale.LC_ALL, '')
                 bond = locale.currency(bond, grouping=True)[:-3]
-                parts.append("Bond: " + bond)
+                #parts.append("Bond: " + bond)
         # Append list of charges
         # But first shorten the charge text
         cities = (r'(?:DPD|Denton|Lake Dallas|Frisco|'
                   r'Dallas|Corinth|Richardson)*')
-        extras = r'\s*(?:CO)?\s*(?:SO)?\s*(?:PD)?\s*(?:Warrant)?(?:S)?\s*/\s*'
+        #extras = r'\s*(?:CO)?\s*(?:SO)?\s*(?:PD)?\s*(?:Warrant)?(?:S)?\s*/\s*'
         for charge in self.charges:
-            charge['charge'] = re.sub(r'\A' + cities + extras,
+            """charge['charge'] = re.sub(r'\A' + cities, # used to be cities + extras,
                                       '',
-                                      charge['charge'])
+                                      charge['charge'])"""
             # pad certain characters with spaces to fix TwitPic display
             charge['charge'] = re.sub(r'([<>])', r' \1 ', charge['charge'])
             # collapse multiple spaces
@@ -126,7 +109,7 @@ def get_jail_report():
     response = urllib2.urlopen('http://dpdjailview.cityofdenton.com/')
     logger.debug("Reading page")
     html = response.read().decode('utf-8')
-    with open('dentonpolice_recent.html', mode='w') as f:
+    with open(SAVE_LOCATION + 'recent.html', mode='w') as f:
         f.write(html)
     return html
 
@@ -159,7 +142,7 @@ def save_mug_shots(inmates):
         inmates: List of Inmate objects to be processed.
     """
     logger = logging.getLogger('save_mug_shots')
-    path = "mugs/"
+    path = SAVE_LOCATION + "mugs/"
     # Make mugs/ folder
     try:
         os.makedirs(path)
@@ -215,10 +198,10 @@ def log_inmates(inmates, recent=False, mode='a'):
     """
     logger = logging.getLogger('log_inmates')
     if recent:
-        location = 'dentonpolice_recent.txt'
+        location = SAVE_LOCATION + 'recent.txt'
         mode = 'w'
     else:
-        location = 'dentonpolice_log.txt'
+        location = SAVE_LOCATION + 'log.txt'
     logger.debug("Saving inmates to {} log".format("recent" if recent
                                                    else "standard"))
     with open(location, mode=mode) as f:
@@ -241,9 +224,9 @@ def read_log(recent=False):
     """
     logger = logging.getLogger('read_log')
     if recent:
-        location = 'dentonpolice_recent.txt'
+        location = SAVE_LOCATION + 'recent.txt'
     else:
-        location = 'dentonpolice_log.txt'
+        location = SAVE_LOCATION + 'log.txt'
     logger.debug("Reading inmates from {} log".format("recent" if recent else
                                                       "standard"))
     inmates = []
@@ -267,7 +250,7 @@ def most_recent_mug(inmate):
         inmates: List of Inmate objects to be processed.
     """
     best = ''
-    for filename in os.listdir('mugs/'):
+    for filename in os.listdir(SAVE_LOCATION + 'mugs/'):
         if fnmatch.fnmatch(filename, '{}*.jpg'.format(inmate.id)):
             if filename > best:
                 best = filename
@@ -287,7 +270,7 @@ def post_twitpic(inmates):
             mail(to=TWITPIC_EMAIL_ADDRESS,
                  subject=message,  # Caption
                  text=repr(inmate),  # Serves as a log that can later be loaded in.
-                 attach="mugs/{}".format(most_recent_mug(inmate)))
+                 attach= SAVE_LOCATION + "mugs/{}".format(most_recent_mug(inmate)))
 
 def parse_inmates(html):
     inmate_pattern = re.compile(r"""
@@ -380,6 +363,7 @@ def main():
     Used to scrape the Jail Custody Report, download mug shots, save a log,
     and upload to Twitter.
     """
+    logging.info("main() starting")
     logger = logging.getLogger('main')
     # Get the Jail Report webpage
     html = get_jail_report()
@@ -445,14 +429,14 @@ def main():
 
 if __name__ == '__main__':
     # Continuously checks the custody report page every SECONDS_BETWEEN_CHECKS.
-    logging.info("Starting main loop.")
+    logging.info("__main__ starting")
     while True:
         try:
             main()
-            logging.debug("Main loop: going to sleep for %s seconds",
+            logging.info("Main loop: going to sleep for %s seconds",
                           SECONDS_BETWEEN_CHECKS)
             time.sleep(SECONDS_BETWEEN_CHECKS)
         except KeyboardInterrupt:
-            print("Bye!")
+            print("Stopping")
             logging.shutdown()
             break
